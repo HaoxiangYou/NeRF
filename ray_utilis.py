@@ -35,6 +35,27 @@ def get_rays(H, W, K, c2w):
 
     return rays_o.astype(np.float32), rays_dir.astype(np.float32)
 
+def render_rays(rays_o_batch, rays_dir_batch, view_dirs_batch, z, network_query_fn, network_fn):
+    # points in N_array
+    pts = rays_o_batch[:, None, :] + rays_dir_batch[:, None, :] * z[None,:, None]
+    
+    # get the raw data from neural networks
+    raw = network_query_fn(pts, view_dirs_batch, network_fn)
+    # get the rgb values from 0 to 1
+    rgbs_volume = F.sigmoid(raw[...,:3])
+    # get the volume density value to be nonnegative
+    volume_densities = F.relu(raw[..., -1])
+
+    distances = torch.linalg.norm(rays_dir_batch, dim=-1, keepdims=True) * (torch.concatenate([z[1:] - z[:-1], torch.tensor([1e10])])[None, :])
+    Ts = torch.exp(-torch.cumsum(
+        torch.concatenate([torch.zeros((volume_densities.shape[0],1)), (volume_densities * distances)[:,:-1]], dim=1), 
+    dim=1))
+
+    # calculate the color projected to image of each rays
+    Cs = torch.sum( (Ts * (1 - torch.exp(-distances * volume_densities)))[..., None] * rgbs_volume, dim=1)
+
+    return Cs
+
 def render_image(rays_o, rays_dir, network_fn, network_query_fn, near, far, N_samples, chunk=32768):
 
     image_shape = rays_dir.shape[:-1]
@@ -45,7 +66,7 @@ def render_image(rays_o, rays_dir, network_fn, network_query_fn, near, far, N_sa
     # however, the input to the neural should be a uniform dir
     view_dirs_flatten = (rays_dir_faltten / np.linalg.norm(rays_dir_faltten, axis=-1, keepdims=True)).astype(np.float32)
 
-    # the distance along the rays
+    # the z values of points along the each ray
     z = torch.linspace(near, far, N_samples, dtype=torch.float32)
     
     rgb_image_flatten = np.zeros_like(rays_o_flatten)
@@ -55,23 +76,9 @@ def render_image(rays_o, rays_dir, network_fn, network_query_fn, near, far, N_sa
         rays_o_batch = torch.tensor(rays_o_flatten[i:i+chunk], dtype=torch.float32).to(device)
         rays_dir_batch = torch.tensor(rays_dir_faltten[i:i+chunk], dtype=torch.float32).to(device)
         view_dirs_batch = torch.tensor(view_dirs_flatten[i:i+chunk]).to(device)
-
-        # points in N_array
-        pts = rays_o_batch[:, None, :] + rays_dir_batch[:, None, :] * z[None,:, None]
         
         with torch.no_grad():
-        # get the raw data from neural networks
-            raw = network_query_fn(pts, view_dirs_batch, network_fn)
-            # get the rgb values from 0 to 1
-            rgbs_volume = F.sigmoid(raw[...,:3])
-            # get the volume density value to be nonnegative
-            volume_densities = F.relu(raw[..., -1])
-            distances = torch.linalg.norm(rays_dir_batch, dim=-1, keepdims=True) * (torch.concatenate([z[1:] - z[:-1], torch.tensor([1e10])])[None, :])
-            Ts = torch.exp(-torch.cumsum(
-                torch.concatenate([torch.zeros((volume_densities.shape[0],1)), (volume_densities * distances)[:,:-1]], dim=1), 
-            dim=1))
-            Cs = torch.sum( (Ts * (1 - torch.exp(-distances * volume_densities)))[..., None] * rgbs_volume, dim=1)
-            
+            Cs = render_rays(rays_o_batch, rays_dir_batch, view_dirs_batch, z, network_query_fn, network_fn)
             rgb_image_flatten[i:i+chunk] = Cs.cpu().numpy()
 
     rgb_image = rgb_image_flatten.reshape(image_shape + (3,))
