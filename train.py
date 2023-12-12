@@ -3,7 +3,7 @@ import numpy as np
 import torch.nn as nn
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader, Dataset
-from nets import NeRF_by_yenchen, get_embedder_by_yenchen, run_network_by_yenchen
+from nets import NeRF, NeRF_by_yenchen, get_embedder_by_yenchen, run_network_by_yenchen
 from data_loading_by_yenchen import load_blender_data
 from ray_utilis import get_rays, render_rays, render_image
 
@@ -48,18 +48,29 @@ def train(network_query_fn, network_fn, dataloader, optimizer, epochs, near, far
         
         print(f"epoch: {epoch+1}, loss: {total_loss / len(dataloader)}")
 
-def main():
+def main(vanilla_architecture=False, single_image_test=True):
+    """
+    The main function for training process
+
+    Args:
+        vanilla_architecture: a flag for whether using the vanilla_architecture or use the original NeRF architectures
+        single_image_test: a flag for debug, if set true, then only one image and pose will be used to develop training dataset, and it will also be visualize to check the correctness of the code
+    """
 
     logs_basedir = "./logs/lego"
 
-    embed_fn, input_ch = get_embedder_by_yenchen(10, 0)
-    embeddirs_fn, input_ch_views = get_embedder_by_yenchen(4, 0)
-    model = NeRF_by_yenchen(D=8, W=256, input_ch=input_ch, input_ch_views=input_ch_views, skips=[4], use_viewdirs=True).to(device)
+    if vanilla_architecture is True:
+        model = NeRF(D=2, W=256, input_ch=3, output_ch=4)
+        network_query_fn = lambda inputs, viewdirs, network_fn: network_fn(inputs)
+    else:
+        embed_fn, input_ch = get_embedder_by_yenchen(10, 0)
+        embeddirs_fn, input_ch_views = get_embedder_by_yenchen(4, 0)
+        model = NeRF_by_yenchen(D=8, W=256, input_ch=input_ch, input_ch_views=input_ch_views, skips=[4], use_viewdirs=True).to(device)
 
-    network_query_fn = lambda inputs, viewdirs, network_fn : run_network_by_yenchen(inputs, viewdirs, network_fn,
-                                                                embed_fn=embed_fn,
-                                                                embeddirs_fn=embeddirs_fn,
-                                                                netchunk=65536)
+        network_query_fn = lambda inputs, viewdirs, network_fn : run_network_by_yenchen(inputs, viewdirs, network_fn,
+                                                                    embed_fn=embed_fn,
+                                                                    embeddirs_fn=embeddirs_fn,
+                                                                    netchunk=65536)
     
     images, poses, render_poses, hwf, i_split = load_blender_data("./data/lego", half_res=True, testskip=8)
     print('Loaded blender', images.shape, hwf)

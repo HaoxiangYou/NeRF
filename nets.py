@@ -4,8 +4,22 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-class NeRF():
-    pass
+class NeRF(nn.Module):
+    def __init__(self, D=8, W=256, input_ch=3, output_ch=4) -> None:
+        super().__init__()
+        self.D = D
+        self.W = W
+        self.input_ch = input_ch
+        self.output_ch = output_ch
+        self.pts_linears = nn.ModuleList([nn.Linear(input_ch, W)] + [nn.Linear(W, W) for i in range(D-1)])
+        self.output_linear = nn.Linear(W, self.output_ch)
+
+    def forward(self, x):
+        for i, l in enumerate(self.pts_linears):
+            x = self.pts_linears[i](x)
+            x = F.relu(x)
+        x = self.output_linear(x)
+        return x
 
 # A NeRF architecture by yenchen
 # This class may be used to load some pretrained model,
