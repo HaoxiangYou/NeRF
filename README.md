@@ -9,3 +9,10 @@ of the ACM, 65(1):99–106, 2021.
 and a torch NeRF tutorial:
 Lin Yen-Chen. Nerf-pytorch. https://github.com/yenchenlin/nerf-pytorch/,
 2020.
+
+# Run the code
+To evaluate the trained model, simple call ```python eval.py``` and you will see a render like
+
+<img src='data/lego/lego_rendering.gif'/>
+
+You can also run ```python train.py``` and ```python ray_utilis.py``` to see individual result.
