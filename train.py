@@ -69,6 +69,9 @@ def main(vanilla_architecture=False, single_image_test=True):
 
     logs_basedir = "./logs/lego"
 
+    if not os.path.exists(logs_basedir):
+        os.makedirs(logs_basedir)
+
     if vanilla_architecture is True:
         model = NeRF(D=2, W=256, input_ch=3, output_ch=4)
         network_query_fn = lambda inputs, viewdirs, network_fn: network_fn(inputs)
