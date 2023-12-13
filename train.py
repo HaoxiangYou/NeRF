@@ -1,3 +1,4 @@
+import os
 import torch
 import numpy as np
 import torch.nn as nn
@@ -45,8 +46,17 @@ def train(network_query_fn, network_fn, dataloader, optimizer, epochs, near, far
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-        
-        print(f"epoch: {epoch+1}, loss: {total_loss / len(dataloader)}")
+
+            if (i+1) % 1000 == 0 or (i+1) == len(dataloader):
+                print(f"epoch: [{epoch+1}/{epochs}], step: [{i+1} / {len(dataloader)}], loss: {total_loss / i}")
+
+        checkpoint_path = os.path.join(logs_basedir, f"{epoch+1}.pth")
+        torch.save({
+            'epoch': epoch + 1,
+            'model': network_fn.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'loss': total_loss / len(dataloader)
+        }, checkpoint_path)
 
 def main(vanilla_architecture=False, single_image_test=True):
     """
@@ -100,10 +110,16 @@ def main(vanilla_architecture=False, single_image_test=True):
 
     rays_rgb_pair_train = np.array([get_rays(H, W, K, pose) + (image, ) for pose, image in zip(poses_train, images_train)])
 
-    rays_o_train = rays_rgb_pair_train[:,0,...][0]
-    rays_dir_train = rays_rgb_pair_train[:,1,...][0]
-    view_dirs_train = rays_dir_train / np.linalg.norm(rays_dir_train, axis=-1, keepdims=True)[0]
-    rgbs_train = rays_rgb_pair_train[:,2,...][0]
+    rays_o_train = rays_rgb_pair_train[:,0,...]
+    rays_dir_train = rays_rgb_pair_train[:,1,...]
+    view_dirs_train = rays_dir_train / np.linalg.norm(rays_dir_train, axis=-1, keepdims=True)
+    rgbs_train = rays_rgb_pair_train[:,2,...]
+
+    if single_image_test:
+        rays_o_train = rays_o_train[0]
+        rays_dir_train = rays_dir_train[0]
+        view_dirs_train = view_dirs_train[0]
+        rgbs_train = rgbs_train[0]
 
     nerf_dataset = NeRFDataset(rays_o_train.reshape((-1,3)), 
                                rays_dir_train.reshape((-1,3)), 
@@ -121,7 +137,14 @@ def main(vanilla_architecture=False, single_image_test=True):
         epochs=N_epochs, N_samples=N_samples, near=near, far=far, 
         logs_basedir=logs_basedir)
     
-    rays_o, rays_dir = get_rays(H, W, K, poses[0])
+    if single_image_test:
+        pose = poses_train[0]
+        image = images_train[0]
+    else:
+        pose = poses_test[0]
+        image = images_test[0]
+
+    rays_o, rays_dir = get_rays(H, W, K, pose)
 
     rendered_image = render_image(rays_o=rays_o, rays_dir=rays_dir, 
         network_fn=model, network_query_fn=network_query_fn,
@@ -129,7 +152,7 @@ def main(vanilla_architecture=False, single_image_test=True):
     
     fig = plt.figure(figsize=(30,20))
     ax = fig.add_subplot(1,2,1)
-    ax.imshow(images_train[0])
+    ax.imshow(image)
     ax.set_title("Original Image")
     plt.box(False)
     plt.axis('off')
