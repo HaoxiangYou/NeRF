@@ -15,4 +15,8 @@ To evaluate the trained model, simple call ```python eval.py``` and you will see
 
 <img src='data/lego/lego_rendering.gif'/>
 
+and 
+
+<img src='data/lego/point_cloud view.png'/>
+
 You can also run ```python train.py``` and ```python ray_utilis.py``` to see individual result.

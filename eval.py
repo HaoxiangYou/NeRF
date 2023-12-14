@@ -2,14 +2,57 @@ import torch
 import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
+from torch.nn import functional as F
 from matplotlib import animation
-from torch.utils.data import DataLoader, Dataset
 from nets import NeRF_by_yenchen, get_embedder_by_yenchen, run_network_by_yenchen
 from data_loading_by_yenchen import load_blender_data
 from ray_utilis import get_rays, render_image
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
+
+def view_as_point_cloud(network_query_fn, network_fn):
+    x = np.linspace(-1,1,50)
+    y = np.linspace(-1,1,50)
+    z = np.linspace(-1,1,50)
+    d = x[1] - x[0]
+    x, y, z = np.meshgrid(x, y, z)
+    x = torch.tensor(x.flatten())
+    y = torch.tensor(y.flatten())
+    z = torch.tensor(z.flatten())
+
+    pts = torch.stack([x,y,z], dim=1)[:,None,:].to(torch.float32)
+    view_dir = torch.tensor([[1,0,0]], dtype=torch.float32)
+    with torch.no_grad():
+        raw = network_query_fn(pts, view_dir, network_fn).squeeze()
+        rgb = F.sigmoid(raw[:,:3])
+        volume_densities = F.relu(raw[:,-1])
+        alpha = 1 -torch.exp(-volume_densities * d)
+
+    # remove redundant points:
+    x_valid = []
+    y_valid = []
+    z_valid = []
+    rgb_valid = []
+    alpha_valid = []
+    for i in range(x.shape[0]):
+        # remove transparent and white points
+        if torch.norm(rgb[i]-torch.tensor([1,1,1])) > 1e-4 and alpha[i] > 1e-4 :
+            x_valid.append(x[i].cpu().numpy())
+            y_valid.append(y[i].cpu().numpy())
+            z_valid.append(z[i].cpu().numpy())
+            rgb_valid.append(rgb[i].cpu().numpy())
+            alpha_valid.append(alpha[i].cpu().numpy())
+
+    x_valid = np.array(x_valid)
+    y_valid = np.array(y_valid)
+    z_valid = np.array(z_valid)
+    rgb_valid = np.array(rgb_valid)
+    alpha_valid = np.array(alpha_valid)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(x_valid, y_valid, z_valid, c = rgb_valid, s=1, alpha=alpha_valid)
 
 def main():
     checkpoint_path = "./data/lego/pretrained_model.pth"
@@ -88,6 +131,8 @@ def main():
     ax.set_title("Image rendered")
     plt.box(False)
     plt.axis('off')
+
+    view_as_point_cloud(network_query_fn, model)
 
     plt.show()
 
